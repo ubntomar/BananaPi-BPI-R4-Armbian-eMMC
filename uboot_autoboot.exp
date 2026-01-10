@@ -1,0 +1,136 @@
+#!/usr/bin/expect -f
+#
+# Script para automatizar boot de Armbian en BPI-R4
+# Uso: sudo ./uboot_autoboot.exp [puerto]
+# Ejemplo: sudo ./uboot_autoboot.exp /dev/ttyUSB0
+#
+
+set timeout 120
+log_user 1
+
+# Puerto serial (default /dev/ttyUSB0)
+set port [lindex $argv 0]
+if {$port eq ""} {
+    set port "/dev/ttyUSB0"
+}
+
+puts "============================================================"
+puts "Automatizacion de boot Armbian para BPI-R4"
+puts "Puerto: $port"
+puts "============================================================"
+puts ""
+puts "INSTRUCCIONES:"
+puts "1. Si el BPI-R4 ya esta encendido, presiona RESET"
+puts "2. Si esta apagado, enciendelo ahora"
+puts "3. El script interceptara U-Boot e inyectara los comandos"
+puts "============================================================"
+puts ""
+
+# Configurar puerto serial
+system "stty -F $port 115200 cs8 -cstopb -parenb raw -echo -icanon min 1 time 1"
+
+# Abrir puerto
+spawn -noecho -open [open $port r+]
+
+# Procedimiento para enviar comando y esperar prompt
+proc send_uboot_cmd {cmd} {
+    send "$cmd\r"
+    sleep 0.3
+    expect {
+        "BPI-R4>" { }
+        "=>" { }
+        timeout {
+            puts "\n\[WARN\] Timeout esperando prompt despues de: $cmd"
+        }
+    }
+}
+
+# Bucle principal - esperar U-Boot
+puts "\[INFO\] Esperando U-Boot..."
+
+set got_prompt 0
+
+expect {
+    # Detectar countdown de autoboot
+    -re "Hit any key|autoboot" {
+        puts "\n\[INFO\] Detectado autoboot, interrumpiendo..."
+        send " "
+        send " "
+        exp_continue
+    }
+
+    # Prompt de U-Boot detectado
+    "BPI-R4>" {
+        puts "\n\[INFO\] Prompt U-Boot detectado!"
+        set got_prompt 1
+    }
+
+    "=>" {
+        puts "\n\[INFO\] Prompt U-Boot detectado!"
+        set got_prompt 1
+    }
+
+    # Detectar kernel panic (sistema intento arrancar y fallo)
+    "Kernel panic" {
+        puts "\n\[WARN\] Detectado kernel panic - esperando reinicio..."
+        exp_continue
+    }
+
+    # Jump to BL indica que esta cargando bootloader
+    "Jump to BL" {
+        puts "\n\[INFO\] Bootloader cargando..."
+        exp_continue
+    }
+
+    # Timeout
+    timeout {
+        puts "\n\[ERROR\] Timeout esperando U-Boot"
+        exit 1
+    }
+}
+
+if {!$got_prompt} {
+    puts "\[ERROR\] No se obtuvo prompt de U-Boot"
+    exit 1
+}
+
+# Dar tiempo para estabilizar
+sleep 0.5
+
+puts "\n============================================================"
+puts "\[INFO\] Enviando comandos de boot (metodo rapido)..."
+puts "============================================================\n"
+
+# Comando 1: Corregir particion root
+set timeout 10
+puts "\[1/2\] Configurando root=/dev/mmcblk0p5..."
+send_uboot_cmd "setenv root /dev/mmcblk0p5 rootfstype=ext4 rootwait"
+
+# Comando 2: Ejecutar newboot
+puts "\[2/2\] Ejecutando newboot..."
+send "run newboot\r"
+
+# Esperar y mostrar salida de Linux
+puts "\n============================================================"
+puts "\[INFO\] Linux arrancando... (Ctrl+C para salir)"
+puts "============================================================\n"
+
+set timeout 300
+expect {
+    "login:" {
+        puts "\n\[OK\] Sistema listo! Login disponible."
+        puts "Usuario: root"
+        puts "Password: 1234"
+    }
+    "Kernel panic" {
+        puts "\n\[ERROR\] Kernel panic durante boot"
+    }
+    timeout {
+        puts "\n\[INFO\] Timeout - verifica la consola serial"
+    }
+    eof {
+        puts "\n\[INFO\] Conexion cerrada"
+    }
+}
+
+puts "\n\[INFO\] Script terminado"

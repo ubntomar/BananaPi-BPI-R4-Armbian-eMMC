@@ -1,0 +1,19 @@
+# Imagenes grandes (descargar manualmente)
+*.img
+*.img.xz
+*.img.gz
+*.img.zip
+*.zip
+
+# Bootloaders (descargar de github.com/frank-w/u-boot)
+*.bin
+
+# Archivos temporales
+*.tmp
+*.log
+*.bak
+*~
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
