@@ -93,3 +93,43 @@ Este es un proyecto en progreso. Si tienes un BPI-R4 y has encontrado mejores fo
 - [Armbian para BPI-R4](https://www.armbian.com/bananapi-r4/) - Descarga oficial (apunta a `armbian/community` en GitHub)
 - [frank-w/u-boot](https://github.com/frank-w/u-boot) - Bootloaders con soporte BPI-R4
 - [Wiki BPI-R4](https://wiki.banana-pi.org/Banana_Pi_BPI-R4) - Documentacion oficial del hardware
+
+---
+
+## Glosario para principiantes
+
+Si eres nuevo en estos temas, aqui van los terminos que usamos en este proyecto explicados de forma simple:
+
+**SoC (System on Chip)** - Un chip que tiene "todo adentro": procesador, memoria, controladores de red, etc. Es como si tu PC completa estuviera en un solo chip. El BPI-R4 usa el MediaTek MT7988A.
+
+**eMMC** - La memoria interna de la placa, como el disco duro de una PC pero soldado en la placa. Es donde instalamos Armbian. Ejemplo: cuando haces `dd if=imagen.img of=/dev/mmcblk0` estas escribiendo directamente sobre esa memoria, como si formatearas un disco duro y le pusieras un sistema operativo.
+
+**NAND** - Otro tipo de memoria interna donde viene OpenWrt de fabrica. La placa tiene dos: NAND (con OpenWrt) y eMMC (donde ponemos Armbian). Un **DIP switch** fisico elige desde cual arranca.
+
+**Bootloader / U-Boot** - El primer programa que se ejecuta al encender la placa. Su unico trabajo es cargar el sistema operativo. Es como el BIOS de una PC: tu no lo ves, pero sin el no arranca nada. Ejemplo: cuando enciendes tu PC y ves el logo del fabricante antes de Windows/Linux, eso es el bootloader trabajando.
+
+**BL2 y FIP** - Son las dos partes del bootloader. BL2 es la primera etapa (muy pequena, solo sabe inicializar la RAM y buscar el FIP), y el FIP es la segunda etapa que contiene el U-Boot completo. Es como un cohete de dos fases: la primera enciende los motores, la segunda pone en orbita.
+
+**Kernel** - El nucleo del sistema operativo. Es el programa que habla directamente con el hardware (discos, red, pantalla) y permite que todo lo demas funcione. Ejemplo: cuando conectas un USB, es el kernel quien lo detecta. En nuestro caso es el archivo `/boot/Image`.
+
+**DTB (Device Tree Blob)** - Un archivo que le dice al kernel que hardware tiene la placa: "tienes 4GB de RAM, tienes eMMC en tal direccion, tienes 4 puertos de red...". Sin este archivo el kernel no sabe que hardware manejar. Ejemplo: es como darle un mapa de la ciudad a un repartidor; sin el mapa, no sabe a donde ir. Archivo: `/boot/dtb/mediatek/mt7988a-bananapi-bpi-r4-emmc.dtb`.
+
+**DTB Overlay (.dtbo)** - Un parche pequeno que modifica el DTB base. En vez de crear un DTB completo para cada variante de la placa (SD, eMMC, WiFi), se aplican parches sobre el base. Problema: el mecanismo de frank-w U-Boot para aplicar estos parches no funciona bien con los de Armbian.
+
+**initrd / uInitrd** - Un mini-sistema de archivos que el kernel carga en RAM antes de montar el disco real. Contiene drivers y scripts minimos para poder acceder al disco donde esta el sistema completo. Ejemplo: es como un kit de emergencia que traes en el carro; lo usas solo para arrancar, despues ya no lo necesitas.
+
+**FIT image (.itb)** - Un archivo que empaqueta kernel + DTB + initrd en un solo "paquete". Es comodo porque cargas un solo archivo en vez de tres. Problema: Armbian no genera este archivo y cuando lo creamos manualmente, el mecanismo de overlays falla.
+
+**booti vs bootm** - Dos comandos de U-Boot para arrancar Linux. `bootm` arranca desde un FIT image (todo empaquetado), `booti` arranca cargando kernel, initrd y DTB por separado. En nuestro caso `booti` funciona y `bootm` no, por el problema de overlays.
+
+**uEnv.txt** - Un archivo de texto que U-Boot lee al arrancar. Cualquier variable definida ahi sobreescribe las de U-Boot. Es como un archivo de configuracion que tiene la ultima palabra. Ejemplo: si U-Boot dice "arranca con bootm" pero uEnv.txt dice "arranca con booti", gana uEnv.txt.
+
+**dd** - Comando de Linux para copiar datos byte a byte. Se usa para "grabar" imagenes en discos. Ejemplo: `dd if=armbian.img of=/dev/mmcblk0` copia la imagen de Armbian directamente a la eMMC, como cuando grabas una imagen ISO en un USB para instalar un sistema operativo.
+
+**Puerto serial / UART** - Una conexion directa de "texto" entre la placa y una PC. Envia y recibe caracteres como un chat primitivo. Es la forma mas basica de comunicarse con el hardware cuando no hay pantalla ni red. Se conecta con un adaptador **FTDI USB-to-TTL** (un cablecito USB que convierte senales seriales).
+
+**SCP** - Copia de archivos por red usando SSH. Ejemplo: `scp archivo.img root@192.168.1.1:/tmp/` copia un archivo desde tu PC al dispositivo remoto, como un "copiar y pegar" pero entre dos maquinas por la red.
+
+**DHCP** - Protocolo que asigna IPs automaticamente. Cuando conectas la placa a la red, el router le asigna una IP (como 192.168.13.228) sin que tengas que configurar nada. Problema: el BPI-R4 genera una MAC address random en cada boot, asi que la IP puede cambiar.
+
+**netplan** - La herramienta que usa Armbian/Ubuntu para configurar la red. Se configura con archivos YAML en `/etc/netplan/`. Ejemplo: para decirle "usa DHCP en el puerto WAN", escribes un archivo con `dhcp4: true` bajo la interfaz `wan`.
