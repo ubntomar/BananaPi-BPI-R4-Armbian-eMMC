@@ -4,9 +4,23 @@ Este repositorio nace de la necesidad de tener una imagen basada en **Debian/Ubu
 
 ## Por que este repo
 
-El BPI-R4 viene de fabrica con OpenWrt en NAND, pero para nuestro caso necesitabamos un sistema basado en Debian con acceso a `apt`, herramientas estandar de Linux, y flexibilidad para desarrollo. Optamos por **Armbian** como distribucion y por los **bootloaders de [frank-w](https://github.com/frank-w/u-boot)** que son los que tienen mejor soporte comunitario para esta placa.
+El BPI-R4 viene de fabrica con OpenWrt en NAND, pero para nuestro caso necesitabamos un sistema basado en Debian con acceso a `apt`, herramientas estandar de Linux, y flexibilidad para desarrollo. Optamos por **Armbian** como distribucion.
 
-El problema es que **no hay un camino directo** para instalar Armbian en la eMMC del BPI-R4 y que arranque automaticamente. La imagen oficial de Armbian no incluye el FIT image (`bpi-r4.itb`) que el U-Boot de frank-w espera, y el mecanismo de DTB overlays entre ambos proyectos es incompatible en las versiones actuales. Esto obliga a hacer configuraciones manuales post-instalacion que documentamos aqui.
+### El problema del bootloader: por que frank-w U-Boot
+
+Para que el BPI-R4 arranque desde la eMMC se necesita un **bootloader (U-Boot)** grabado en las particiones de boot de la eMMC. Armbian no incluye bootloader propio para esta placa. Aqui es donde entra **[frank-w/u-boot](https://github.com/frank-w/u-boot)**: es un port mantenido por la comunidad del U-Boot oficial, adaptado especificamente para el BPI-R4 y otros boards MediaTek. Es practicamente **la unica opcion funcional** para arrancar desde eMMC con un sistema que no sea OpenWrt.
+
+El U-Boot de frank-w aporta dos archivos esenciales que se graban en la eMMC:
+- **BL2** (`bpi-r4_emmc_bl2.img`) - Se graba en la particion `boot0`. Es lo primero que ejecuta el SoC al encender.
+- **FIP** (`bpi-r4_emmc_fip.bin`) - Se graba en la particion 4 (offset sector 13312). Contiene el U-Boot propiamente dicho.
+
+**Sin estos archivos la placa simplemente no arranca** - muestra `System halt!` porque no encuentra bootloader en la eMMC.
+
+### El problema de integracion Armbian + frank-w
+
+Aunque ambos proyectos soportan el BPI-R4, **no estan integrados entre si**. La cadena de boot de frank-w U-Boot espera encontrar un FIT image (`bpi-r4.itb`) que empaqueta kernel, initrd y DTB en un solo archivo, pero Armbian no genera ese archivo. Ademas, el mecanismo de DTB overlays de frank-w es incompatible con los `.dtbo` de Armbian en las versiones actuales: al intentar aplicar overlays, el device tree se corrompe y el kernel no detecta la eMMC.
+
+Esto significa que **no hay un camino directo** para instalar Armbian y que arranque automaticamente. Hay que configurar manualmente el boot despues de la instalacion, que es exactamente lo que documentamos aqui.
 
 ## Que encontraras en este repositorio
 
@@ -21,7 +35,13 @@ El problema es que **no hay un camino directo** para instalar Armbian en la eMMC
 
 ## La solucion en resumen
 
-Despues de multiples intentos con FIT images y `bootm`, la solucion que funciona es **sobreescribir el comando `newboot` de U-Boot** a traves de `/uEnv.txt` para usar `booti` con carga individual de kernel, initrd y DTB:
+Lo esencial para que funcione son **3 cosas**:
+
+1. **Bootloader frank-w grabado en la eMMC** - BL2 en `boot0`, FIP en particion 4. Sin esto no arranca nada.
+2. **Imagen de Armbian en la eMMC** - Se escribe con `dd` sobre `/dev/mmcblk0`. Contiene el rootfs, kernel, initrd y DTBs.
+3. **`/uEnv.txt` con override del comando de boot** - Esta es la pieza clave que une todo.
+
+El U-Boot de frank-w lee `/uEnv.txt` al arrancar y permite sobreescribir cualquier variable, incluyendo comandos internos. Sobreescribimos `newboot` (el comando que normalmente intenta cargar el FIT image inexistente) para que en su lugar cargue kernel, initrd y DTB por separado usando `booti`:
 
 ```
 newboot=setenv bootargs console=ttyS0,115200 root=/dev/mmcblk0p5 rootfstype=ext4 rootwait rw; load mmc 0:5 0x46000000 boot/Image; load mmc 0:5 0x48000000 boot/uInitrd; load mmc 0:5 0x47000000 boot/dtb/mediatek/mt7988a-bananapi-bpi-r4-emmc.dtb; booti 0x46000000 0x48000000 0x47000000
